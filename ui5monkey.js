@@ -1,12 +1,12 @@
 window.UI5Monkey = {};
 
-(function (module, $, sap) {
+(function(module, $, sap) {
     "use strict";
 
     class Util {
         static extend() {
             let target = arguments[0];
-            const sources = arguments.slice(1);
+            const sources = [].slice.call(arguments, 1);
 
             function copy(obj1, obj2) {
                 if (typeof obj1 !== "object") {
@@ -34,6 +34,23 @@ window.UI5Monkey = {};
             }
 
             return target;
+        }
+
+        static keyEvent(input, char) {
+            const e = jQuery.Event("keypress");
+            e.which = char.charCodeAt(0);
+            e.keyCode = 13;
+            $(input).trigger(e);
+
+            input.value += char;
+        }
+
+        static type(input, string) {
+            $(input).focus();
+
+            for (let i = 0; i < string.length; i++) {
+                Util.keyEvent(input, string.charAt(i));
+            }
         }
     }
 
@@ -105,8 +122,8 @@ window.UI5Monkey = {};
         static sentence(minWords, maxWords) {
             let result = [];
 
-            Random.repeat(minWords, maxWords, function () {
-               result.push(Random.word());
+            Random.repeat(minWords, maxWords, function() {
+                result.push(Random.word());
             });
 
             return result.join(" ") + ".";
@@ -120,6 +137,11 @@ window.UI5Monkey = {};
 
         get selector() {
 
+        }
+
+        //noinspection JSMethodCanBeStatic
+        getter(element) {
+            return sap.ui.getCore().byId(element.id);
         }
 
         static get name() {
@@ -147,15 +169,15 @@ window.UI5Monkey = {};
 
     class InputMonkey extends Monkey {
         act(element) {
-            let value = element.getValue();
+            let value;
 
-            switch (element.getType()) {
-                case "Text": {
-                    value += Random.word() + " ";
+            switch (element.type) {
+                case "text": {
+                    value = Random.word() + " ";
                     break;
                 }
-                case "Number": {
-                    value += Random.number(0, 10);
+                case "number": {
+                    value = Random.number(0, 10);
                     break;
                 }
                 default: {
@@ -164,16 +186,26 @@ window.UI5Monkey = {};
                 }
             }
 
-            element.setValue(value);
+            Util.type(element, value);
+        }
+
+        get selector() {
+            return "input"
+        }
+
+        getter(element) {
+            return element;
         }
     }
 
     class Horde {
-        static Monkeys = [
-            StandardFactory.create("Button", ".sapMBtn", "press"),
-            StandardFactory.create("Checkbox", ".sapMCb", "select"),
-            InputMonkey
-        ];
+        static get Monkeys() {
+            return [
+                StandardFactory.create("Button", ".sapMBtn", "press"),
+                StandardFactory.create("Checkbox", ".sapMCb", "select"),
+                InputMonkey
+            ];
+        }
 
         static createHorde(settings) {
             settings = Util.extend({
@@ -194,7 +226,7 @@ window.UI5Monkey = {};
                     max = settings[monkeyClass.name].max || max;
                 }
 
-                Random.repeat(min, max, function () {
+                Random.repeat(min, max, function() {
                     monkeys.push(new monkeyClass(settings[monkeyClass.name]));
                 });
             }
@@ -212,16 +244,20 @@ window.UI5Monkey = {};
         }
 
         unleash() {
-            const fnWorker = function (horde) {
+            if (this.handle) {
+                return;
+            }
+
+            const fnWorker = function(horde) {
                 this.counter = this.counter || 0;
 
                 let monkey = horde.monkey();
-                let jqElement = $(monkey.selector());
+                let jqElement = $(monkey.selector);
 
                 if (jqElement.size() > 0) {
-                    jqElement = Random.element(jqElement);
+                    let element = Random.element(jqElement);
 
-                    let uiElement = sap.ui.getCore().byId(jqElement.id);
+                    let uiElement = monkey.getter(element);
                     if (uiElement) {
                         monkey.act(uiElement);
                     }
@@ -230,16 +266,30 @@ window.UI5Monkey = {};
                 this.counter++;
 
                 if (this.counter < horde.settings.actions) {
-                    window.setTimeout(function () {
-                        this(horde);
+                    horde.handle = window.setTimeout(function() {
+                        this.call(this, horde);
                     }.bind(this), horde.settings.timeout);
                 }
             };
 
-            window.setTimeout(function () {
-                fnWorker(this);
-            }, this.settings.timeout);
+            this.handle = window.setTimeout(function() {
+                fnWorker.call(fnWorker, this);
+            }.bind(this), this.settings.timeout);
+
+            return this;
+        }
+
+        stop() {
+            if (this.handle) {
+                window.clearTimeout(this.handle);
+                this.handle = null;
+            }
+
+            return this;
         }
     }
+
+    module.UI5Horde = Horde;
+    module.UI5Monkey = Monkey;
 
 })(window.UI5Monkey, jQuery, sap);
